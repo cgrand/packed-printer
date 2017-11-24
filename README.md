@@ -59,11 +59,24 @@ On code (not intended for that):
        (newline)))
      :coll-indents {"(" 2})
 (defn render [lines]
-  (doseq [{:keys [indent], [head & spans] :spans} lines]
+  (doseq [{:keys [indent],  [head & spans] :spans} lines]
     (prsp indent) (prsp (leading-spaces head true)) (print (str head))
     (doseq [span spans] (prsp (leading-spaces span false))
-      (print (str span))) (newline)))
-nil
+      (print (str span)))
+    (newline)))
+```
+
+Values are indented when they can't be set on the same line:
+
+```clj
+=> (pprint '{:foo :bar :baz :quux} :width 10)
+{:foo :bar,
+ :baz :quux}
+=> (pprint '{:foo :bar :baz :quux} :width 6)
+{:foo
+   :bar,
+ :baz
+   :quux}
 ```
 
 ## Complexity

@@ -38,10 +38,14 @@
     (Span. span 0 0 ##Inf 0)
     (assoc span :first-indent ##Inf :leading-spaces 0)))
 
+(defn no-space [span]
+  (if (string? span)
+    (Span. span 0 0 0 0)
+    (assoc span :leading-spaces 0)))
+
 (defn length
   ([span] (length span false))
   ([span first?]
-    (assert (some? span))
     (+ (leading-spaces span first?) (count (str span)))))
 
 (defn- trail-only? [span]
@@ -52,6 +56,9 @@
 
 (defn- closing [s indent]
   (trailer (nest s -1 (- indent))))
+
+(def ^:private kv-open (Span. "" 0 1 0 1))
+(def ^:private kv-close (Span. "" 0 -1 ##Inf 0))
 
 (def ^:private comma (trailer ","))
 
@@ -69,12 +76,13 @@
                   (update 1 trailer)))
               [(str open close)]))
           (kv-spans [[k v]]
-            (let [sps (-> (spans k) (update 0 nest 1 0))
-                  n (count sps)
-                  sps (into sps (spans v))]
+            (let [sps (into [kv-open] (spans k))
+                  val-start (count sps)]
               (-> sps
-                (update n nest 0 0 kv-indent)
-                (update (dec (count sps)) nest -1 0))))
+                (into (spans v))
+                (update 1 no-space)
+                (conj kv-close)
+                (update val-start nest 0 0 kv-indent))))
           (spans [x]
             (cond
               (vector? x) (coll-spans x "[" "]")
@@ -84,7 +92,7 @@
               (if (seq x)
                 (let [indent (coll-indents "{" 1)
                       kvs (into [] x)]
-                  (-> [(opening "{" indent)] 
+                  (-> [(opening "{" indent)]
                     (into (mapcat (fn [kv] (conj (kv-spans kv) comma))) (pop kvs))
                     (into (kv-spans (peek kvs)))
                     (conj (closing "}" indent))
@@ -105,6 +113,11 @@
         (recur spans (conj block span) (+ n (nesting span))))
       [block spans])))
 
+(defn next-mode [mode span]
+  (case mode
+    (:trail :tail-gate) (if (= "" (str span)) :tail-gate :trail)
+    mode))
+
 (defn layout
   ([spans full-width] (layout spans full-width false))
   ([spans full-width strict]
@@ -113,60 +126,64 @@
                 (or (@cache args)
                   (doto (apply raw-best-layout args)
                     (->> (swap! cache assoc args)))))
-              (raw-best-layout [spans w w' pos {:keys [cost line lines] :as layout}]
-                (if (and strict (<= w 0))
+              (raw-best-layout [spans w w' pos {:keys [cost line lines] :as layout} mode]
+                #_{:pre [(do (prn '> (count spans) (some-> spans first (length (zero? pos))) [w w' pos] (map str spans)) true)]
+                :post [(do (prn '< (count spans) (some-> spans first (length (zero? pos))) [w w' pos] (map str spans) 'cost (:cost %))
+                         (prn (map #(map str %) (cons (:line %) (map :spans (:lines %)))))
+                         true)]}
+                (if (or (= ##Inf pos) (and strict (<= w 0)))
                   impossible-layout
                   (min-key #(estimate w pos %)
-                    (if (pos? pos) (br w' (best-layout spans w' w' 0 layout)) impossible-layout)
-                    (if-some [[span & spans] spans]
-                      (let [end-pos (+ pos (length span (zero? pos)))]
+                    (if (pos? pos) (br w' (best-layout spans w' w' 0 layout :normal)) impossible-layout)
+                    (if-some [[span & spans] (seq spans)]
+                      (let [end-pos (+ pos (length span (zero? pos)))
+                            mode (if (and (= :normal mode) (pos? pos) (<= w pos)) :trail mode)]
                         (cond
-                          (if strict
-                            (< w end-pos)
-                            (and (pos? pos) (<= w pos) (not (trail-only? span)))) impossible-layout
-                      
-                          (pos? (nesting span)) ; is block head
-                          (layout-block span spans w w' pos)
-                    
-                        :else ; not a block head
-                        (cat span (best-layout spans w  w' end-pos layout))))
+                          (= ##Inf end-pos) impossible-layout
+                          (and strict (< w end-pos)) impossible-layout
+                          (and (= :trail mode) (not (trail-only? span))) impossible-layout
+                          (pos? (nesting span)) (layout-block span spans w w' pos mode) ; is block head
+                          :else ; not a block head
+                          (cat span (best-layout spans w  w' end-pos layout (next-mode mode span)))))
                       layout))))
-              (layout-block [block-head spans w bottom-w pos]
+              (layout-block [block-head spans w bottom-w pos mode]
                 (let [w' (- w pos (leading-spaces block-head (zero? pos)) (indentation block-head))
                       [block-tail bottom] (split-block spans (nesting block-head))
                       head-end-pos (+ pos (length block-head (zero? pos)))
-                      block-layout (cat block-head (best-layout block-tail w w' head-end-pos empty-layout))]
+                      block-layout (best-layout (cons (nest block-head -1 0) block-tail) w w' pos empty-layout mode)]
                   (if (seq (:lines block-layout))
                     ; multiline
                     (let [block-lines (into [] (:lines block-layout))
-                          {last-spans :spans last-indent :indent} (peek block-lines)
-                          last-line-pos (transduce (map length) + (count (str (first last-spans))) (rest last-spans))
-                          bottom-layout (best-layout bottom bottom-w bottom-w last-line-pos empty-layout)
-                          last-width (- full-width last-indent)
-                          layout (br last-width (assoc bottom-layout :line (concat last-spans (:line bottom-layout))))
-                          layout (reduce (fn [layout {:keys [spans indent] :as line}]
-                                           (-> layout
-                                             (update :cost + (line-cost (- full-width indent) 0 spans))
-                                             (assoc :lines (cons line (:lines layout)))))
-                                   layout (rseq (pop block-lines)))]
-                      (assoc layout :line (:line block-layout)))
+                          last-line (peek block-lines)
+                          last-line-end (+ (:indent last-line) (reduce (fn [pos span] (+ pos (length span (zero? pos)))) 0 (:spans last-line)))
+                          bottom-indent (- full-width bottom-w)
+                          {trailers :line :as bottom-layout} (best-layout bottom bottom-w bottom-w
+                                                               (- last-line-end bottom-indent) empty-layout :trail)
+                          last-line+trailers (update last-line :spans concat trailers)
+                          all-lines (concat (pop block-lines) (cons last-line+trailers (:lines bottom-layout)))
+                          all-cost (+ (:cost block-layout) (line-cost last-line+trailers) (- (line-cost last-line)) (:cost bottom-layout))] 
+                      {:cost all-cost
+                       :line (:line block-layout)
+                       :lines all-lines})
                     ; single line
                     (let [line-end-pos (transduce (map length) + head-end-pos (rest (:line block-layout)))
-                          bottom-layout (best-layout bottom w bottom-w line-end-pos empty-layout)]
+                          bottom-layout (best-layout bottom w bottom-w line-end-pos empty-layout :normal)]
                       (assoc bottom-layout
                         :cost (max (:cost block-layout) (:cost bottom-layout))
                         :line (concat (:line block-layout) (:line bottom-layout)))))))
              (estimate [width pos {:keys [line cost]}]
                (+ cost (line-cost width pos line)))
-             (line-cost [width pos line]
-               (if (or (seq line) (pos? pos))
-                 (let [rem (Math/abs
-                             (if-some [[span & spans] (seq line)]
-                               (transduce (map length) - (- width pos (length span (zero? pos))) spans) ; because of the abs, 1-arity of - is not a pb
-                               (- width pos)))
-                       left-spaces (+ (- full-width width) (if (pos? 0) (leading-spaces (first line) true) 0))]
-                   (Math/pow (+ rem left-spaces) 2))
-                 0))
+             (line-cost
+               ([{:keys [spans indent]}] (line-cost (- full-width indent) 0 spans))
+               ([width pos line]
+                 (if (or (seq line) (pos? pos))
+                   (let [rem (Math/abs
+                               (if-some [[span & spans] (seq line)]
+                                 (transduce (map length) - (- width pos (length span (zero? pos))) spans) ; because of the abs, 1-arity of - is not a pb
+                                 (- width pos)))
+                         left-spaces (+ (- full-width width) (if (pos? 0) (leading-spaces (first line) true) 0))]
+                     (Math/pow (+ rem left-spaces) 2))
+                   0)))
              (cat [span layout]
                (assoc layout :line (cons span (:line layout))))
              (br [width {:keys [line lines] :as layout}]
@@ -176,7 +193,7 @@
                    {:cost (estimate width 0 layout)
                     :line ()
                     :lines (cons {:spans line :indent (- full-width width)} lines)})))]
-       (let [layout (best-layout spans full-width full-width 0 empty-layout)]
+       (let [layout (best-layout spans full-width full-width 0 empty-layout :normal)]
          (when-not (= ##Inf (:cost layout))
            (:lines (br full-width layout))))))))
 
@@ -190,9 +207,12 @@
     (print (apply str (repeat n " ")))))
 
 (defn render [lines]
-  (doseq [{:keys [indent] [head & spans] :spans} lines]
-    (prsp indent) (prsp (leading-spaces head true)) (print (str head))
-    (doseq [span spans]  (prsp (leading-spaces span false)) (print (str span)))
+  (doseq [{:keys [indent spans]} lines]
+    (prsp indent) 
+    (reduce (fn [pos span]
+              (prsp (leading-spaces span (zero? pos))) (print (str span))
+              (+ pos (length span (zero? pos))))
+      0 spans)
     (newline)))
 
 (defn pprint
