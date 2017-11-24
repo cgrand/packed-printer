@@ -79,7 +79,60 @@ Values are indented when they can't be set on the same line:
    :quux}
 ```
 
-## Complexity
+## Comparison
+
+### clojure.pprint
+```clj
+=> (binding [clojure.pprint/*print-right-margin* 30]
+     (clojure.pprint/pprint {:a :b :c {:e :f :g :h :i :j :k :l} :m :n :o {:p {:q :r :s :t}}}))
+
+;        1    1    2    2    3
+;...5....0....5....0....5....0
+{:a :b,
+ :c
+ {:e :f,
+  :g :h,
+  :i :j,
+  :k :l},
+ :m :n,
+ :o {:p {:q :r, :s :t}}}
+```
+
+### zprint
+```clj
+=> (czprint {:a :b :c {:e :f :g :h :i :j :k :l} :m :n :o {:p {:q :r :s :t}}} 30 {:map {:nl-separator? true}})
+
+;        1    1    2    2    3
+;...5....0....5....0....5....0
+{:a :b,
+ :c {:e :f,
+     :g :h,
+     :i :j,
+     :k :l},
+ :m :n,
+ :o {:p {:q :r, :s :t}}}
+ ```
+
+### packed-printer 
+```clj
+=> (pprint {:a :b :c {:e :f :g :h :i :j :k :l} :m :n :o {:p {:q :r :s :t}}} :width 30)
+
+;        1    1    2    2    3
+;...5....0....5....0....5....0
+{:a :b, :c {:e :f, :g :h,
+            :i :j, :k :l},
+ :m :n, :o {:p {:q :r, :s :t}}}
+ ```
+
+## Implementation
+
+### Stages
+
+There are three stages: `spans` (which converts data into spans), `layout` (which finds the optimal layout), and `render` (which turns the layout in side effects).
+
+The main stage in `layout`. TODO: describe its inputs and outputs.
+
+### Complexity
 
 Complexity is `O(n * w^3)` where n is the length (in spans) of the data to layout and w is the desired width.
 
