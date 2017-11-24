@@ -124,6 +124,19 @@ Values are indented when they can't be set on the same line:
  :m :n, :o {:p {:q :r, :s :t}}}
  ```
 
+And in strict mode:
+
+```clj
+=> (pprint {:a :b :c {:e :f :g :h :i :j :k :l} :m :n :o {:p {:q :r :s :t}}} :width 30 :strict true)
+
+;        1    1    2    2    3
+;...5....0....5....0....5....0
+{:a :b, :c {:e :f, :g :h,
+            :i :j, :k :l},
+ :m :n,
+ :o {:p {:q :r, :s :t}}}
+```
+
 ## Implementation
 
 ### Stages
