@@ -14,7 +14,7 @@ Default width is 70 chars and default mode is non-strict.
 
 ## Usage
 
-Coordinates `[net.cgrand/packed-printer "0.2.0"]`.
+Coordinates `[net.cgrand/packed-printer "0.2.1"]`.
 
 ```clj
 (require '[net.cgrand.packed-printer :refer [pprint]])
@@ -125,9 +125,10 @@ Values are indented when they can't be set on the same line:
 
 ;        1    1    2    2    3
 ;...5....0....5....0....5....0
-{:a :b, :c {:e :f, :g :h, :i :j, :k :l},
+{:a :b, :c {:e :f, :g :h,
+            :i :j, :k :l},
  :m :n, :o {:p {:q :r, :s :t}}}
- ```
+```
 
 And in strict mode:
 
@@ -140,6 +141,17 @@ And in strict mode:
             :i :j, :k :l},
  :m :n, :o {:p {:q :r,
                 :s :t}}}
+```
+
+And in between:
+
+```clj
+=> (pprint {:a :b :c {:e :f :g :h :i :j :k :l} :m :n :o {:p {:q :r :s :t}}} :width 30 :strict 1)
+
+;        1    1    2    2    3
+;...5....0....5....0....5....0
+{:a :b, :c {:e :f, :g :h, :i :j, :k :l},
+ :m :n, :o {:p {:q :r, :s :t}}}
 ```
 
 ## Stages

@@ -65,8 +65,11 @@ appears at the start of a line) or nil if not acceptable.")
 (defn layout
   ([spans full-width] (layout spans full-width false))
   ([spans full-width strict]
-    (let [relax (not strict)
+    (let [relax (not (true? strict))
+          penalty (if (number? strict) strict 2)
           cache (atom {})]
+      (when-not (pos? penalty)
+        (throw (ex-info "Strictness can't be zero or negative." {:strict strict})))
       (letfn [(best-layout [& args]
                 (or (@cache args)
                   (doto (apply raw-best-layout args)
@@ -114,7 +117,7 @@ appears at the start of a line) or nil if not acceptable.")
                  (if (or (seq spans) (< indent pos))
                    (let [left (min indent full-width)
                          right (- (+ indent (line-pos (- pos indent) spans)) full-width)]
-                     (+ (* left left) (* right right)))
+                     (+ (* left left) (* right right (if (pos? right) penalty 1))))
                    0)))
              (cat [span layout]
                (some-> layout (assoc :line (cons span (:line layout)))))

@@ -9,8 +9,9 @@
 (defn pprint
   "Packed prints x, core options are:
  * :width the desired output width (in chars, defaults to 72),
- * :strict, a boolean (defaults to false), true when the desired width is a hard limit
-   (pprint may throw when no suitable layout is found),
+ * :strict, a number or boolean (defaults to true or 2), true when the desired width is a hard limit
+   (pprint may throw when no suitable layout is found), the strictness factor influences the layout
+   propension to write past the margin.
  * :as a keyword denoting the nature of the input (defaults to :edn),
  * :to a keyword denoting the expected output (defaults to :text).
 
