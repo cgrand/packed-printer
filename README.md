@@ -14,6 +14,12 @@ Default width is 70 chars and default mode is non-strict.
 
 ## Usage
 
+Coordinates `[net.cgrand/packed-printer "0.2.0"]`.
+
+```clj
+(require '[net.cgrand.packed-printer :refer [pprint]])
+```
+
 Relaxed mode:
 ```clj
 => (pprint (partition 10 (range 50)) :width 15)
