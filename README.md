@@ -1,10 +1,10 @@
 # packed-printer
 
-A Clojure library to pretty print data in a packed manner.
+A Clojure and Clojurescript library to pretty print data in a packed manner.
 
 It's an adaptation of [minimum raggedness](https://en.wikipedia.org/wiki/Line_wrap_and_word_wrap#Minimum_raggedness) to data.
 
-The cost function is the square of the amount of whitespace (both to the left (indentation) and right (from end of line to desired width) of a line).
+The cost function is the sum of the square of the indentation and the square of the distance between the end of the line and the margin (width).
 
 In strict mode, the algorithm can't print past the desired width. If no suitable layout is found for the given width an exception is thrown.
 
@@ -119,8 +119,7 @@ Values are indented when they can't be set on the same line:
 
 ;        1    1    2    2    3
 ;...5....0....5....0....5....0
-{:a :b, :c {:e :f, :g :h,
-            :i :j, :k :l},
+{:a :b, :c {:e :f, :g :h, :i :j, :k :l},
  :m :n, :o {:p {:q :r, :s :t}}}
  ```
 
@@ -133,21 +132,31 @@ And in strict mode:
 ;...5....0....5....0....5....0
 {:a :b, :c {:e :f, :g :h,
             :i :j, :k :l},
- :m :n,
- :o {:p {:q :r, :s :t}}}
+ :m :n, :o {:p {:q :r,
+                :s :t}}}
 ```
 
-## Implementation
-
-### Stages
+## Stages
 
 There are three stages: `spans` (which converts data into spans), `layout` (which finds the optimal layout), and `render` (which turns the layout in side effects).
 
-The main stage in `layout`. TODO: describe its inputs and outputs.
+The main stage in `layout` and is fixed. `core/spans` and `core/render` are multimethods and thus can be extended. Dispatch occurs based on the values of options `:to` (the target, defaults is `:text` and `:as` the input format (default `:edn`). `core/spans` dispatches on the pair `[to as]` while `core/render` dispatches only on `to`.
 
-### Complexity
+### `core/spans`
+
+It must returns a sequences of spans (see protocol `core/Span`).
+
+### `core/render`
+
+It takes a sequence of lines, a line being a map with keys `:indent` (the amount of whitespace by which to indent the line) and `:spans` a sequence of spans.
+
+When `:to` is `:text`, spans must implement the `text/Text` protocol. 
+
+## Implementation
 
 Complexity is `O(n * w^3)` where n is the length (in spans) of the data to layout and w is the desired width.
+
+The `w^3` may be frightening but it's just an upper bound: dynamic programming is used, giving a cache size of `O(n * w^3)` but in practice this cache is very sparsely populated. 
 
 ## License
 
