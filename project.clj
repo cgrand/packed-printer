@@ -1,4 +1,4 @@
-(defproject net.cgrand/packed-printer "0.2.1"
+(defproject net.cgrand/packed-printer "0.3.0i-SNAPSHOT"
   :description "A compact pretty printer"
   :author "Christophe Grand"
   :license {:name "Eclipse Public License"

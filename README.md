@@ -2,15 +2,11 @@
 
 A Clojure and Clojurescript library to pretty print data in a packed manner.
 
-It's an adaptation of [minimum raggedness](https://en.wikipedia.org/wiki/Line_wrap_and_word_wrap#Minimum_raggedness) to data.
+*This printer likes rectangular shapes (the wider the better) and despises staircases.*
 
-The cost function is the sum of the square of the indentation and the square of the distance between the end of the line and the margin (width).
+It's an adaptation of [minimum raggedness](https://en.wikipedia.org/wiki/Line_wrap_and_word_wrap#Minimum_raggedness -- used by TeX for non-justified text) to data.
 
-In strict mode, the algorithm can't print past the desired width. If no suitable layout is found for the given width an exception is thrown.
-
-In non-strict mode, the algorithm can print beyond the desired width, in such cases the cost function takes into account the numbers of chars written after the limit.
-
-Default width is 70 chars and default mode is non-strict.
+## Packed printer in one sentence
 
 ## Usage
 
@@ -174,7 +170,19 @@ When `:to` is `:text`, spans must implement the `text/Text` protocol.
 
 Complexity is `O(n * w^3)` where n is the length (in spans) of the data to layout and w is the desired width.
 
-The `w^3` may be frightening but it's just an upper bound: dynamic programming is used, giving a cache size of `O(n * w^3)` but in practice this cache is very sparsely populated. 
+The `w^3` may be frightening but it's just an upper bound: dynamic programming is used, giving a cache size of `O(n * w^3)` but in practice this cache is very sparsely populated. Binding `core/*print-stats*` to true causes the actual value for `w^3` to be printed out.
+
+### Minimum raggedness
+
+The usual algorithm found for minimum raggedness is `O(n^2)` and uses dynamic programming.
+
+However if you are laying out things on a grid whose number of columns is low then `O(n*w)` is possible. The key insight is that the cost of a layout depends only of the position in the list of words/spans to layout and the position in the current line -- hence the `n*w`.
+
+### Adaptation for data
+
+To layout data, two parameters are added: current indentation and next line indentation. Both are bounded by `w`. Well, they are bounded by `w` only when `:strict true`.
+
+In relaxed mode, how far in the margin can things be printed is bounded in practice by the cost function. Making the cost function more punitive (increasing strictness) will result in less margin prints.
 
 ## License
 

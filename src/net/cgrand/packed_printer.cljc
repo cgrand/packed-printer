@@ -3,7 +3,7 @@
   (:require 
     [net.cgrand.packed-printer.core :as core]
     ; below requires have defmethods
-    [net.cgrand.packed-printer.text]
+    [net.cgrand.packed-printer.text :as text]
     [net.cgrand.packed-printer.text.edn]))
 
 (defn pprint

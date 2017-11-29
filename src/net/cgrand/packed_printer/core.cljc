@@ -62,27 +62,51 @@ appears at the start of a line) or nil if not acceptable.")
 (defn- line-pos [pos spans]
   (reduce (fn [pos span] (+ pos (length span (zero? pos)))) pos spans))
 
+(def ^:dynamic *print-stats* false)
+
 (defn layout
   ([spans full-width] (layout spans full-width false))
   ([spans full-width strict]
     (let [relax (not (true? strict))
           penalty (if (number? strict) strict 2)
-          cache (atom {})]
+          cache (atom {})
+          pending (atom [])]
       (when-not (pos? penalty)
         (throw (ex-info "Strictness can't be zero or negative." {:strict strict})))
-      (letfn [(best-layout [& args]
+      (letfn [(safe-best-layout [& args] ; kind of a trampoline against SO
+                (loop [todo [args]]
+                  (when-some [args (peek todo)]
+                    (recur (try
+                             (apply best-layout args)
+                             (pop todo)
+                             (catch #?(:clj StackOverflowError :cljs :default) e
+                               (let [todo (into todo @pending)]
+                                 (reset! pending [])
+                                 todo))))))
+                (apply best-layout args))
+              (best-layout [& args]
                 (or (@cache args)
-                  (doto (apply raw-best-layout args)
-                    (->> (swap! cache assoc args)))))
+                  (let [_ (swap! pending conj args)
+                        r (apply raw-best-layout args)]
+                    (swap! cache assoc args r)
+                    (swap! pending pop)
+                    r)))
               (raw-best-layout [spans i i' pos may-br]
                 (when (or relax (<= i full-width))
                   (if-some [[span & spans :as all-spans] (seq spans)]
-                    (min-cost i pos
-                      (if (block-head? span)
-                        (layout-block span spans i i' pos)
-                        (layout-regular span spans i i' pos))
-                      (when (and may-br (< i pos))
-                        (br i' (raw-best-layout all-spans i' i' i' false))))
+                    (let [; the marginal cost is extra cost of adding the span to the current line and past the margin (sic)
+                          marginal-cost (when-some [end-pos (some-> (length span (= i pos)) (+ pos))]
+                                          (when (< full-width end-pos)
+                                            (- (line-cost i end-pos nil) (line-cost i pos nil))))
+                          br-layout (when (and may-br (< i pos))
+                                      (br i' (raw-best-layout all-spans i' i' i' false)))
+                          inline-layout (when-not (and br-layout marginal-cost (< (:cost br-layout) marginal-cost))
+                                          ; avoid computing inline layout when it's bound to be more expensive
+                                          (if (block-head? span)
+                                            (layout-block span spans i i' pos)
+                                            (layout-regular span spans i i' pos)))]
+                      ; inline before br in preference order
+                      (min-cost i pos inline-layout br-layout))
                     empty-layout)))
               (layout-regular [span spans i i' pos]
                 (when-some [n (length span (= i pos))]
@@ -127,7 +151,7 @@ appears at the start of a line) or nil if not acceptable.")
                   :line ()
                   :lines (cons {:spans line :indent indent} lines)}
                  layout))]
-        (some->>
-          (best-layout spans 0 0 0 false)
-          (br 0)
-          :lines)))))
+        (when *print-stats*
+          (safe-best-layout spans 0 0 0 false) ; populate cache
+          (println "; in practice" (str full-width "^3") "is" (/ (double (count @cache)) (count spans)) "and not" (Math/pow full-width 3)))
+        (some->> (safe-best-layout spans 0 0 0 false) (br 0) :lines)))))
