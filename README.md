@@ -2,7 +2,7 @@
 
 A Clojure and Clojurescript library to pretty print data in a packed manner.
 
-**This printer likes rectangular shapes (the wider the better) and despises staircases.**
+*This printer likes rectangular shapes (the wider the better) and despises staircases.*
 
 It's an adaptation of [minimum raggedness](https://en.wikipedia.org/wiki/Line_wrap_and_word_wrap#Minimum_raggedness) (used by TeX for non-justified text) to data.
 
