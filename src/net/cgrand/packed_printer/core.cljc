@@ -45,19 +45,17 @@ appears at the start of a line) or nil if not acceptable.")
 (defn- split-block
   "Returns a pair [block+trail bottom] where block-trail is the block and its trail
    (spans that must appear right after it) and bottom the remaining spans."
-  [spans]
-  (loop [spans spans block+trail [] n 1]
-    (if (pos? n)
-      (let [[span & spans] (seq spans)] ; invariant: n >= 0 => spans not empty
-        (recur spans (conj block+trail span) (+ n (if-some [i (indent span)] (if (neg? i) -1 1) 0))))
-      (if-some [[span & spans :as all-spans] (seq spans)]
-        (cond
-          (length span true) ; not a trailing span: it can appear at the start of a line
-          [block+trail all-spans]
-          (block-head? span)
-          (recur spans (conj block+trail span) 1)
-          :else (recur spans (conj block+trail span) n))
-        [block+trail spans]))))
+  [spans from to]
+  (loop [from (inc from) n 1]
+    (let [span (nth spans from nil)]
+      (if (pos? n)
+        (recur (inc from) (+ n (if-some [i (indent span)] (if (neg? i) -1 1) 0))) ; invariant: n >= 0 => from < to
+        (if (< from to)
+          (cond
+            (length span true) from ; not a trailing span: it can appear at the start of a line
+            (block-head? span) (recur (inc from) 1)
+            :else (recur (inc from) n))
+          from)))))
 
 (defn- line-pos [pos spans]
   (reduce (fn [pos span] (+ pos (length span (zero? pos)))) pos spans))
@@ -70,7 +68,8 @@ appears at the start of a line) or nil if not acceptable.")
     (let [relax (not (true? strict))
           penalty (if (number? strict) strict 2)
           cache (atom {})
-          pending (atom [])]
+          pending (atom [])
+          spans (vec spans)]
       (when-not (pos? penalty)
         (throw (ex-info "Strictness can't be zero or negative." {:strict strict})))
       (letfn [(safe-best-layout [& args] ; kind of a trampoline against SO
@@ -91,41 +90,44 @@ appears at the start of a line) or nil if not acceptable.")
                     (swap! cache assoc args r)
                     (swap! pending pop)
                     r)))
-              (raw-best-layout [spans i i' pos may-br]
+              (raw-best-layout [from to i i' pos may-br]
                 (when (or relax (<= i full-width))
-                  (if-some [[span & spans :as all-spans] (seq spans)]
-                    (let [; the marginal cost is extra cost of adding the span to the current line and past the margin (sic)
+                  (if (< from to)
+                    (let [span (nth spans from)
+                          ; the marginal cost is extra cost of adding the span to the current line and past the margin (sic)
                           marginal-cost (when-some [end-pos (some-> (length span (= i pos)) (+ pos))]
                                           (when (< full-width end-pos)
                                             (- (line-cost i end-pos nil) (line-cost i pos nil))))
                           br-layout (when (and may-br (< i pos))
-                                      (br i' (raw-best-layout all-spans i' i' i' false)))
+                                      (br i' (raw-best-layout from to i' i' i' false)))
                           inline-layout (when-not (and br-layout marginal-cost (< (:cost br-layout) marginal-cost))
                                           ; avoid computing inline layout when it's bound to be more expensive
                                           (if (block-head? span)
-                                            (layout-block span spans i i' pos)
-                                            (layout-regular span spans i i' pos)))]
+                                            (layout-block from to i i' pos)
+                                            (layout-regular from to i i' pos)))]
                       ; inline before br in preference order
                       (min-cost i pos inline-layout br-layout))
                     empty-layout)))
-              (layout-regular [span spans i i' pos]
-                (when-some [n (length span (= i pos))]
-                  (let [end-pos (+ pos n)]
-                    (when (or relax (<= end-pos full-width))
-                      (cat span (best-layout spans i i' end-pos (br-after? span)))))))
-              (layout-block [block-head spans i bottom-i pos]
-                (let [i' (+ pos (indent block-head))
-                      [block-tail bottom] (split-block spans)]
-                  (when-some [{:keys [lines line cost] :as block-layout} (layout-regular block-head block-tail i i' pos)]
+              (layout-regular [from to i i' pos]
+                (let [span (nth spans from)]
+                  (when-some [n (length span (= i pos))]
+                    (let [end-pos (+ pos n)]
+                      (when (or relax (<= end-pos full-width))
+                        (cat span (best-layout (inc from) to i i' end-pos (br-after? span))))))))
+              (layout-block [from to i bottom-i pos]
+                (let [block-head (nth spans from)
+                      i' (+ pos (indent block-head))
+                      block-to (split-block spans from to)]
+                  (when-some [{:keys [lines line cost] :as block-layout} (layout-regular from block-to i i' pos)]
                     (if (seq lines)
                       ; multiline
-                      (when-some [bottom-layout (br bottom-i (best-layout bottom bottom-i bottom-i bottom-i false))]
+                      (when-some [bottom-layout (br bottom-i (best-layout block-to to bottom-i bottom-i bottom-i false))]
                         {:cost (+ cost (:cost bottom-layout))
                          :line line
                          :lines (concat lines (:lines bottom-layout))})
                       ; single line
                       (let [pos (line-pos pos line)
-                            bottom-layout (best-layout bottom i bottom-i pos true)]
+                            bottom-layout (best-layout block-to to i bottom-i pos true)]
                         (assoc bottom-layout :line (concat line (:line bottom-layout))))))))
               (min-cost [i pos a b]
                 (cond
@@ -152,6 +154,6 @@ appears at the start of a line) or nil if not acceptable.")
                   :lines (cons {:spans line :indent indent} lines)}
                  layout))]
         (when *print-stats*
-          (safe-best-layout spans 0 0 0 false) ; populate cache
+          (safe-best-layout 0 (count spans) 0 0 0 false) ; populate cache
           (println "; in practice" (str full-width "^3") "is" (/ (double (count @cache)) (count spans)) "and not" (Math/pow full-width 3)))
-        (some->> (safe-best-layout spans 0 0 0 false) (br 0) :lines)))))
+        (some->> (safe-best-layout 0 (count spans) 0 0 0 false) (br 0) :lines)))))
